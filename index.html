@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#0f172a" />
+  <title>Exercise Vault</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app" class="app-shell">
+    <header class="topbar">
+      <div>
+        <div class="eyebrow">Personal movement library</div>
+        <h1>Exercise Vault</h1>
+      </div>
+      <div class="top-actions">
+        <button id="importBtn" class="btn secondary">Import backup</button>
+        <button id="exportBtn" class="btn secondary">Export backup</button>
+        <button id="saveVideoBtn" class="btn primary">+ Save video</button>
+      </div>
+    </header>
+
+    <section class="search-wrap">
+      <input id="searchInput" type="search" placeholder="Search renegade row, dumbbells, hips square, EMOM…" autocomplete="off" />
+    </section>
+
+    <nav class="tabs" aria-label="Main sections">
+      <button class="tab active" data-view="library">Library</button>
+      <button class="tab" data-view="sources">Sources</button>
+      <button class="tab" data-view="workouts">Workouts</button>
+      <button class="tab" data-view="inbox">Inbox <span id="inboxCount" class="count">0</span></button>
+    </nav>
+
+    <main>
+      <section id="libraryView" class="view active">
+        <div class="section-head">
+          <div>
+            <h2>Exercise library</h2>
+            <p>One exercise can point to several saved demonstrations and technique clips.</p>
+          </div>
+          <button id="newExerciseBtn" class="btn secondary">+ Exercise</button>
+        </div>
+        <div id="filterChips" class="chips"></div>
+        <div id="exerciseGrid" class="card-grid"></div>
+        <div id="libraryEmpty" class="empty hidden">Nothing matches that search yet.</div>
+      </section>
+
+      <section id="sourcesView" class="view">
+        <div class="section-head">
+          <div>
+            <h2>Source videos</h2>
+            <p>A single source can contain ten, twenty, or more indexed clips.</p>
+          </div>
+        </div>
+        <div id="sourceList" class="stack"></div>
+        <div id="sourcesEmpty" class="empty hidden">Save your first video to start indexing clips.</div>
+      </section>
+
+      <section id="workoutsView" class="view">
+        <div class="workout-layout">
+          <aside class="panel">
+            <div class="section-head compact">
+              <div><h2>Workout builder</h2><p>Build from your indexed movements.</p></div>
+            </div>
+            <label>Workout name<input id="workoutNameInput" value="Dumbbell Engine" /></label>
+            <label>Format<select id="workoutFormatInput">
+              <option>EMOM</option><option>Tabata</option><option>AMRAP</option><option>Circuit</option><option>Superset</option><option>Straight Sets</option><option>For Time</option><option>Mobility Flow</option><option>Custom</option>
+            </select></label>
+            <label>Notes<textarea id="workoutNotesInput" placeholder="5 rounds, 45 sec work / 15 sec transition…"></textarea></label>
+            <div id="builderExerciseList" class="builder-list"></div>
+            <button id="saveWorkoutBtn" class="btn primary full">Save workout</button>
+          </aside>
+          <section class="panel">
+            <div class="section-head compact"><div><h2>Saved workouts</h2><p>Open a workout to use its movement previews.</p></div></div>
+            <div id="workoutList" class="stack"></div>
+            <div id="workoutsEmpty" class="empty hidden">No workouts saved yet.</div>
+          </section>
+        </div>
+      </section>
+
+      <section id="inboxView" class="view">
+        <div class="section-head"><div><h2>Inbox</h2><p>Quick saves can wait here until you have time to organize them.</p></div></div>
+        <div id="inboxList" class="stack"></div>
+        <div id="inboxEmpty" class="empty hidden">Your inbox is clear.</div>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="sourceDialog">
+    <form id="sourceForm" method="dialog" class="dialog-card">
+      <div class="dialog-head"><div><div class="eyebrow">Save source</div><h3>Video source</h3></div><button type="button" class="icon-btn" data-close="sourceDialog">×</button></div>
+      <label>Video URL<input id="sourceUrl" required placeholder="https://youtube.com/watch?v=… or /shorts/…" /></label>
+      <div class="two-col">
+        <label>Title<input id="sourceTitle" placeholder="Optional — you can name it now" /></label>
+        <label>Creator<input id="sourceCreator" placeholder="Optional" /></label>
+      </div>
+      <label>Platform<select id="sourcePlatform"><option>YouTube</option><option>Facebook</option><option>Instagram</option><option>Other</option></select></label>
+      <label class="check"><input id="sourceToInbox" type="checkbox" /> Quick save to Inbox instead of indexing now</label>
+      <div class="dialog-actions"><button type="button" class="btn secondary" data-close="sourceDialog">Cancel</button><button class="btn primary" value="default">Save source</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="clipDialog">
+    <form id="clipForm" method="dialog" class="dialog-card wide">
+      <div class="dialog-head"><div><div class="eyebrow">Index clip</div><h3 id="clipDialogTitle">Add clip</h3></div><button type="button" class="icon-btn" data-close="clipDialog">×</button></div>
+      <input id="clipSourceId" type="hidden" />
+      <input id="clipId" type="hidden" />
+      <div class="two-col">
+        <label>Exercise / clip name<input id="clipName" required placeholder="Renegade Row" /></label>
+        <label>Aliases<input id="clipAliases" placeholder="plank row, dumbbell plank row" /></label>
+      </div>
+      <div class="four-col">
+        <label>Start<input id="clipStart" placeholder="3:12" required /></label>
+        <label>End<input id="clipEnd" placeholder="3:48" required /></label>
+        <label>Preview start<input id="clipPreviewStart" placeholder="3:20" /></label>
+        <label>Preview end<input id="clipPreviewEnd" placeholder="3:27" /></label>
+      </div>
+      <div class="two-col">
+        <label>Tags<input id="clipTags" placeholder="dumbbells, core, back, anti-rotation" /></label>
+        <label>Equipment<input id="clipEquipment" placeholder="dumbbells" /></label>
+      </div>
+      <div class="two-col">
+        <label>Body area<input id="clipBody" placeholder="core, back" /></label>
+        <label>Goal<input id="clipGoal" placeholder="strength, hypertrophy, mobility" /></label>
+      </div>
+      <label>Notes<textarea id="clipNotes" placeholder="Great cue about keeping the hips square."></textarea></label>
+      <div class="dialog-actions"><button type="button" class="btn secondary" data-close="clipDialog">Cancel</button><button class="btn primary" value="default">Save clip</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="exerciseDialog">
+    <form id="exerciseForm" method="dialog" class="dialog-card">
+      <div class="dialog-head"><div><div class="eyebrow">Exercise record</div><h3>Create exercise</h3></div><button type="button" class="icon-btn" data-close="exerciseDialog">×</button></div>
+      <label>Name<input id="exerciseName" required placeholder="Renegade Row" /></label>
+      <label>Aliases<input id="exerciseAliases" placeholder="plank row, dumbbell plank row" /></label>
+      <div class="two-col"><label>Equipment<input id="exerciseEquipment" /></label><label>Body area<input id="exerciseBody" /></label></div>
+      <label>Tags<input id="exerciseTags" placeholder="core, back, anti-rotation" /></label>
+      <label>Notes<textarea id="exerciseNotes"></textarea></label>
+      <div class="dialog-actions"><button type="button" class="btn secondary" data-close="exerciseDialog">Cancel</button><button class="btn primary" value="default">Save exercise</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="previewDialog">
+    <div class="dialog-card wide">
+      <div class="dialog-head"><div><div class="eyebrow">Loop preview</div><h3 id="previewTitle">Preview</h3></div><button type="button" class="icon-btn" data-close="previewDialog">×</button></div>
+      <div id="playerWrap" class="player-wrap"><div id="youtubePlayer"></div><div id="fallbackPlayer" class="fallback hidden"></div></div>
+      <div id="previewMeta" class="preview-meta"></div>
+      <div class="dialog-actions"><button id="openSourceBtn" type="button" class="btn secondary">Open source</button><button type="button" class="btn primary" data-close="previewDialog">Done</button></div>
+    </div>
+  </dialog>
+
+  <input id="backupFile" type="file" accept="application/json" hidden />
+  <script src="https://www.youtube.com/iframe_api"></script>
+  <script src="app.js"></script>
+</body>
+</html>

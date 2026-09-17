@@ -1,0 +1,9 @@
+{
+  "name": "Exercise Vault",
+  "short_name": "Vault",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f5f6f8",
+  "theme_color": "#0f172a",
+  "description": "Index exercise clips from saved videos and build workouts from them."
+}
