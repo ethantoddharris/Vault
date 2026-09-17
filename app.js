@@ -26,6 +26,33 @@ function del(store,id){return new Promise((res,rej)=>{const r=tx(store,'readwrit
 function all(store){return new Promise((res,rej)=>{const r=tx(store).getAll();r.onsuccess=()=>res(r.result||[]);r.onerror=()=>rej(r.error);});}
 function get(store,id){return new Promise((res,rej)=>{const r=tx(store).get(id);r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});}
 
+async function removeExerciseFromWorkouts(exerciseId){
+  const workouts=await all('workouts');
+  for(const w of workouts){
+    const next=(w.exerciseIds||[]).filter(id=>id!==exerciseId);
+    if(next.length!==(w.exerciseIds||[]).length){w.exerciseIds=next;await put('workouts',w);}
+  }
+}
+async function pruneExerciseIfOrphaned(exerciseId){
+  if(!exerciseId)return;
+  const clips=await all('clips');
+  if(clips.some(c=>c.exerciseId===exerciseId))return;
+  await del('exercises',exerciseId);
+  await removeExerciseFromWorkouts(exerciseId);
+}
+async function deleteClipCascade(clipId){
+  const clip=await get('clips',clipId);if(!clip)return;
+  await del('clips',clipId);
+  await pruneExerciseIfOrphaned(clip.exerciseId);
+}
+async function deleteSourceCascade(sourceId){
+  const clips=(await all('clips')).filter(c=>c.sourceId===sourceId);
+  const impacted=[...new Set(clips.map(c=>c.exerciseId).filter(Boolean))];
+  for(const c of clips)await del('clips',c.id);
+  await del('sources',sourceId);
+  for(const exId of impacted)await pruneExerciseIfOrphaned(exId);
+}
+
 function parseTime(v){
   if(v===null||v===undefined||v==='')return null;
   if(typeof v==='number'&&Number.isFinite(v))return Math.max(0,v);
@@ -78,9 +105,23 @@ async function renderLibrary(){
 
 async function renderSources(){
   const [sources,clips]=await Promise.all([all('sources'),all('clips')]);const wrap=$('#sourceList');wrap.innerHTML='';$('#sourcesEmpty').classList.toggle('hidden',sources.length>0);
-  sources.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)).forEach(src=>{const srcClips=clips.filter(c=>c.sourceId===src.id).sort((a,b)=>a.start-b.start);const yt=parseYouTube(src.url);const card=document.createElement('article');card.className='source-card';card.innerHTML=`<div class="source-top"><div><h3>${escapeHtml(src.title||'Untitled source')}</h3><div class="meta">${escapeHtml(src.platform||'Other')}${src.creator?` • ${escapeHtml(src.creator)}`:''}${yt?.isShort?' • Short':''}</div></div><div class="source-actions"><button class="btn secondary add-clip">+ Add clip</button><button class="btn secondary open-source">Open</button></div></div><div class="source-clips">${srcClips.map(c=>`<div class="source-clip"><div><strong>${escapeHtml(c.name)}</strong><div class="meta">${fmtTime(c.start)}–${fmtTime(c.end)}</div></div><button class="btn secondary preview" data-id="${c.id}">Preview</button><button class="btn secondary edit" data-id="${c.id}">Edit</button></div>`).join('')||'<div class="meta">No clips indexed yet.</div>'}</div>`;card.querySelector('.add-clip').onclick=()=>openClipDialog(src.id);card.querySelector('.open-source').onclick=()=>window.open(src.url,'_blank','noopener');card.querySelectorAll('.preview').forEach(b=>b.onclick=()=>openPreview(b.dataset.id));card.querySelectorAll('.edit').forEach(b=>b.onclick=()=>openClipDialog(src.id,b.dataset.id));wrap.appendChild(card);});
+  sources.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)).forEach(src=>{
+    const srcClips=clips.filter(c=>c.sourceId===src.id).sort((a,b)=>a.start-b.start);const yt=parseYouTube(src.url);const card=document.createElement('article');card.className='source-card';
+    card.innerHTML=`<div class="source-top"><div><h3>${escapeHtml(src.title||'Untitled source')}</h3><div class="meta">${escapeHtml(src.platform||'Other')}${src.creator?` • ${escapeHtml(src.creator)}`:''}${yt?.isShort?' • Short':''} • ${srcClips.length} clip${srcClips.length===1?'':'s'}</div></div><div class="source-actions"><button class="btn secondary add-clip">+ Add clip</button><button class="btn secondary edit-source">Edit source</button><button class="btn secondary open-source">Open</button><button class="btn secondary danger delete-source">Delete source</button></div></div><div class="source-clips">${srcClips.map(c=>`<div class="source-clip"><div><strong>${escapeHtml(c.name)}</strong><div class="meta">${fmtTime(c.start)}–${fmtTime(c.end)}</div></div><button class="btn secondary preview" data-id="${c.id}">Preview</button><button class="btn secondary edit" data-id="${c.id}">Edit</button><button class="btn secondary danger delete-clip" data-id="${c.id}">Delete</button></div>`).join('')||'<div class="meta">No clips indexed yet.</div>'}</div>`;
+    card.querySelector('.add-clip').onclick=()=>openClipDialog(src.id);
+    card.querySelector('.edit-source').onclick=()=>openSourceDialog(src.id);
+    card.querySelector('.open-source').onclick=()=>window.open(src.url,'_blank','noopener');
+    card.querySelector('.delete-source').onclick=async()=>{
+      const msg=srcClips.length?`Delete “${src.title}” and all ${srcClips.length} clip${srcClips.length===1?'':'s'} from it? Exercises with no remaining clips will also be removed from the library.`:`Delete “${src.title}”?`;
+      if(!confirm(msg))return;
+      await deleteSourceCascade(src.id);await render();
+    };
+    card.querySelectorAll('.preview').forEach(b=>b.onclick=()=>openPreview(b.dataset.id));
+    card.querySelectorAll('.edit').forEach(b=>b.onclick=()=>openClipDialog(src.id,b.dataset.id));
+    card.querySelectorAll('.delete-clip').forEach(b=>b.onclick=async()=>{const c=await get('clips',b.dataset.id);if(!c||!confirm(`Delete clip “${c.name}”? If this is the last clip for that exercise, the exercise will also be removed.`))return;await deleteClipCascade(c.id);await render();});
+    wrap.appendChild(card);
+  });
 }
-
 async function renderInbox(){const inbox=(await all('inbox')).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));$('#inboxCount').textContent=inbox.length;const wrap=$('#inboxList');wrap.innerHTML='';$('#inboxEmpty').classList.toggle('hidden',inbox.length>0);inbox.forEach(item=>{const d=document.createElement('article');d.className='inbox-card';d.innerHTML=`<div class="source-top"><div><strong>${escapeHtml(item.title||'Unsorted video')}</strong><div class="meta">${escapeHtml(item.platform||'Other')} • ${escapeHtml(item.url)}</div></div><div class="source-actions"><button class="btn secondary organize">Organize</button><button class="btn secondary danger remove">Remove</button></div></div>`;d.querySelector('.organize').onclick=async()=>{const src={id:uid(),url:item.url,title:item.title||'Untitled source',creator:'',platform:item.platform||'Other',createdAt:Date.now()};await put('sources',src);await del('inbox',item.id);await render();setView('sources');openClipDialog(src.id);};d.querySelector('.remove').onclick=async()=>{await del('inbox',item.id);render();};wrap.appendChild(d);});}
 
 async function renderBuilder(){const exercises=(await all('exercises')).sort((a,b)=>a.name.localeCompare(b.name));const wrap=$('#builderExerciseList');wrap.innerHTML='';exercises.forEach(e=>{const row=document.createElement('label');row.className='builder-item';row.innerHTML=`<input type="checkbox" value="${e.id}"><span><strong>${escapeHtml(e.name)}</strong><span class="meta"> ${escapeHtml((e.equipment||[]).slice(0,2).join(' • '))}</span></span>`;wrap.appendChild(row);});}
@@ -89,6 +130,13 @@ async function renderWorkouts(){const [workouts,exercises]=await Promise.all([al
 function setView(name){activeView=name;$$('.tab').forEach(t=>t.classList.toggle('active',t.dataset.view===name));$$('.view').forEach(v=>v.classList.remove('active'));$('#'+name+'View').classList.add('active');}
 function showDialog(id){const d=$('#'+id);if(typeof d.showModal==='function')d.showModal();else d.setAttribute('open','');}
 function closeDialog(id){const d=$('#'+id);if(d.open)d.close();}
+
+async function openSourceDialog(sourceId=''){
+  $('#sourceForm').reset();$('#sourceId').value=sourceId;$('#sourceToInbox').disabled=!!sourceId;$('#sourceToInbox').checked=false;
+  $('#sourceDialogTitle').textContent=sourceId?'Edit video source':'Save video source';
+  if(sourceId){const src=await get('sources',sourceId);if(!src)return;$('#sourceUrl').value=src.url||'';$('#sourceTitle').value=src.title||'';$('#sourceCreator').value=src.creator||'';$('#sourcePlatform').value=src.platform||'Other';}
+  showDialog('sourceDialog');
+}
 
 function openClipDialog(sourceId,clipId=''){const f=$('#clipForm');f.reset();$('#clipSourceId').value=sourceId;$('#clipId').value=clipId;$('#clipDialogTitle').textContent=clipId?'Edit clip':'Add clip';if(clipId){get('clips',clipId).then(c=>{if(!c)return;$('#clipName').value=c.name||'';$('#clipAliases').value=(c.aliases||[]).join(', ');$('#clipStart').value=fmtTime(c.start);$('#clipEnd').value=fmtTime(c.end);$('#clipPreviewStart').value=c.previewStart!=null?fmtTime(c.previewStart):'';$('#clipPreviewEnd').value=c.previewEnd!=null?fmtTime(c.previewEnd):'';$('#clipTags').value=(c.tags||[]).join(', ');$('#clipEquipment').value=(c.equipment||[]).join(', ');$('#clipBody').value=(c.body||[]).join(', ');$('#clipGoal').value=(c.goal||[]).join(', ');$('#clipNotes').value=c.notes||'';});}showDialog('clipDialog');}
 
@@ -104,12 +152,12 @@ async function importBackup(file){const parsed=JSON.parse(await file.text());if(
 function wireEvents(){
   $$('.tab').forEach(t=>t.onclick=()=>setView(t.dataset.view));
   $('#searchInput').addEventListener('input',()=>{if(activeView!=='library')setView('library');renderLibrary();});
-  $('#saveVideoBtn').onclick=()=>{ $('#sourceForm').reset();showDialog('sourceDialog');};
+  $('#saveVideoBtn').onclick=()=>openSourceDialog();
   $('#newExerciseBtn').onclick=()=>{ $('#exerciseForm').reset();showDialog('exerciseDialog');};
   $$('[data-close]').forEach(b=>b.onclick=()=>{const id=b.dataset.close;if(id==='previewDialog')stopPreview();closeDialog(id);});
   $('#previewDialog').addEventListener('close',stopPreview);
-  $('#sourceForm').addEventListener('submit',async e=>{e.preventDefault();const url=$('#sourceUrl').value.trim();if(!url)return;const platform=$('#sourcePlatform').value;const title=$('#sourceTitle').value.trim()||'Untitled source';if($('#sourceToInbox').checked){await put('inbox',{id:uid(),url,title,platform,createdAt:Date.now()});}else{const yt=parseYouTube(url);await put('sources',{id:uid(),url,title,creator:$('#sourceCreator').value.trim(),platform:yt?'YouTube':platform,createdAt:Date.now()});}closeDialog('sourceDialog');await render();});
-  $('#clipForm').addEventListener('submit',async e=>{e.preventDefault();const start=parseTime($('#clipStart').value),end=parseTime($('#clipEnd').value);if(start===null||end===null||end<=start){alert('Please enter a valid clip start and an end time after the start.');return;}const id=$('#clipId').value||uid();const clip={id,sourceId:$('#clipSourceId').value,name:$('#clipName').value.trim(),aliases:normalizeList($('#clipAliases').value),start,end,previewStart:parseTime($('#clipPreviewStart').value),previewEnd:parseTime($('#clipPreviewEnd').value),tags:normalizeList($('#clipTags').value),equipment:normalizeList($('#clipEquipment').value),body:normalizeList($('#clipBody').value),goal:normalizeList($('#clipGoal').value),notes:$('#clipNotes').value.trim(),createdAt:Date.now()};if(clip.previewStart===null)clip.previewStart=start;if(clip.previewEnd===null)clip.previewEnd=Math.min(end,start+7);if(clip.previewEnd<=clip.previewStart){clip.previewStart=start;clip.previewEnd=Math.min(end,start+7);}await put('clips',clip);await ensureExerciseFromClip(clip);closeDialog('clipDialog');await render();});
+  $('#sourceForm').addEventListener('submit',async e=>{e.preventDefault();const url=$('#sourceUrl').value.trim();if(!url)return;const platform=$('#sourcePlatform').value;const title=$('#sourceTitle').value.trim()||'Untitled source';const sourceId=$('#sourceId').value;if(!sourceId&&$('#sourceToInbox').checked){await put('inbox',{id:uid(),url,title,platform,createdAt:Date.now()});}else{const yt=parseYouTube(url);const existing=sourceId?await get('sources',sourceId):null;await put('sources',{id:sourceId||uid(),url,title,creator:$('#sourceCreator').value.trim(),platform:yt?'YouTube':platform,createdAt:existing?.createdAt||Date.now(),updatedAt:Date.now()});}closeDialog('sourceDialog');await render();});
+  $('#clipForm').addEventListener('submit',async e=>{e.preventDefault();const start=parseTime($('#clipStart').value),end=parseTime($('#clipEnd').value);if(start===null||end===null||end<=start){alert('Please enter a valid clip start and an end time after the start.');return;}const id=$('#clipId').value||uid();const previous=$('#clipId').value?await get('clips',id):null;const oldExerciseId=previous?.exerciseId;const clip={id,sourceId:$('#clipSourceId').value,name:$('#clipName').value.trim(),aliases:normalizeList($('#clipAliases').value),start,end,previewStart:parseTime($('#clipPreviewStart').value),previewEnd:parseTime($('#clipPreviewEnd').value),tags:normalizeList($('#clipTags').value),equipment:normalizeList($('#clipEquipment').value),body:normalizeList($('#clipBody').value),goal:normalizeList($('#clipGoal').value),notes:$('#clipNotes').value.trim(),createdAt:previous?.createdAt||Date.now(),updatedAt:Date.now()};if(clip.previewStart===null)clip.previewStart=start;if(clip.previewEnd===null)clip.previewEnd=Math.min(end,start+7);if(clip.previewEnd<=clip.previewStart){clip.previewStart=start;clip.previewEnd=Math.min(end,start+7);}await put('clips',clip);await ensureExerciseFromClip(clip);if(oldExerciseId&&oldExerciseId!==clip.exerciseId)await pruneExerciseIfOrphaned(oldExerciseId);closeDialog('clipDialog');await render();});
   $('#exerciseForm').addEventListener('submit',async e=>{e.preventDefault();await put('exercises',{id:uid(),name:$('#exerciseName').value.trim(),aliases:normalizeList($('#exerciseAliases').value),equipment:normalizeList($('#exerciseEquipment').value),body:normalizeList($('#exerciseBody').value),tags:normalizeList($('#exerciseTags').value),notes:$('#exerciseNotes').value.trim(),createdAt:Date.now()});closeDialog('exerciseDialog');await render();});
   $('#saveWorkoutBtn').onclick=async()=>{const ids=$$('#builderExerciseList input:checked').map(x=>x.value);await put('workouts',{id:uid(),name:$('#workoutNameInput').value.trim()||'Untitled workout',format:$('#workoutFormatInput').value,notes:$('#workoutNotesInput').value.trim(),exerciseIds:ids,createdAt:Date.now()});$('#builderExerciseList').querySelectorAll('input').forEach(x=>x.checked=false);await renderWorkouts();};
   $('#exportBtn').onclick=exportBackup;$('#importBtn').onclick=()=>$('#backupFile').click();$('#backupFile').onchange=async e=>{if(!e.target.files[0])return;try{await importBackup(e.target.files[0]);}catch(err){alert('Could not import that backup: '+err.message);}e.target.value='';};

@@ -90,7 +90,8 @@
 
   <dialog id="sourceDialog">
     <form id="sourceForm" method="dialog" class="dialog-card">
-      <div class="dialog-head"><div><div class="eyebrow">Save source</div><h3>Video source</h3></div><button type="button" class="icon-btn" data-close="sourceDialog">×</button></div>
+      <div class="dialog-head"><div><div class="eyebrow">Source video</div><h3 id="sourceDialogTitle">Save video source</h3></div><button type="button" class="icon-btn" data-close="sourceDialog">×</button></div>
+      <input id="sourceId" type="hidden" />
       <label>Video URL<input id="sourceUrl" required placeholder="https://youtube.com/watch?v=… or /shorts/…" /></label>
       <div class="two-col">
         <label>Title<input id="sourceTitle" placeholder="Optional — you can name it now" /></label>
