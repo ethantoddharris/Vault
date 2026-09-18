@@ -7,6 +7,8 @@ let activeFilter='All';
 let ytPlayer=null;
 let loopTimer=null;
 let previewContext=null;
+const inlinePreviewPlayers=new Map();
+let inlinePreviewObserver=null;
 
 const $=s=>document.querySelector(s);
 const $$=s=>[...document.querySelectorAll(s)];
@@ -91,15 +93,85 @@ async function renderLibrary(){
   const tags=new Set();exercises.forEach(e=>[...(e.tags||[]),...(e.equipment||[]),...(e.body||[])].forEach(t=>tags.add(t)));
   const chipWrap=$('#filterChips');chipWrap.innerHTML='';['All',...Array.from(tags).sort().slice(0,18)].forEach(t=>{const b=document.createElement('button');b.className='chip'+(activeFilter===t?' active':'');b.textContent=t;b.onclick=()=>{activeFilter=t;renderLibrary();};chipWrap.appendChild(b);});
   const filtered=exercises.filter(e=>{const hay=[e.name,...(e.aliases||[]),...(e.tags||[]),...(e.equipment||[]),...(e.body||[]),e.notes||''].join(' ').toLowerCase();const filterOk=activeFilter==='All'||[...(e.tags||[]),...(e.equipment||[]),...(e.body||[])].includes(activeFilter);return filterOk&&(!q||hay.includes(q));});
+
+  teardownInlinePreviews();
   const grid=$('#exerciseGrid');grid.innerHTML='';$('#libraryEmpty').classList.toggle('hidden',filtered.length>0);
+  const previewJobs=[];
   filtered.forEach(ex=>{
     const exClips=clips.filter(c=>c.exerciseId===ex.id);
     const featured=exClips[0];const src=featured?sources.find(s=>s.id===featured.sourceId):null;const yt=src?parseYouTube(src.url):null;
     const card=document.createElement('article');card.className='exercise-card';
     const thumbClass=yt?.isShort?'thumb vertical':'thumb';
-    card.innerHTML=`<div class="${thumbClass}">${yt?`<img src="${ytThumb(yt.id)}" alt="${escapeHtml(ex.name)} preview thumbnail">`:''}<button class="play-pill" ${featured?'':'disabled'}>${featured?'▶ Loop preview':'No clip yet'}</button></div><div class="exercise-body"><div class="exercise-top"><div><h3>${escapeHtml(ex.name)}</h3><div class="meta">${escapeHtml([...(ex.equipment||[]),...(ex.body||[])].slice(0,4).join(' • '))}</div></div><span class="count">${exClips.length} clip${exClips.length===1?'':'s'}</span></div><div class="tag-row">${(ex.tags||[]).slice(0,6).map(t=>`<span class="tag">${escapeHtml(t)}</span>`).join('')}</div><div class="clip-list">${exClips.slice(0,4).map(c=>`<div class="clip-row"><span>${escapeHtml(c.name)} <span class="meta">${fmtTime(c.start)}–${fmtTime(c.end)}</span></span><button data-clip="${c.id}">Preview</button></div>`).join('')}</div></div>`;
-    if(featured)card.querySelector('.play-pill').onclick=()=>openPreview(featured.id);
+    const previewMarkup=featured&&yt
+      ? `<div class="inline-preview" data-inline-preview="${featured.id}" aria-label="Looping preview for ${escapeHtml(ex.name)}"><div class="inline-preview-loading">Loading clip preview…</div></div>`
+      : (yt?`<img src="${ytThumb(yt.id)}" alt="${escapeHtml(ex.name)} source thumbnail">`: '<div class="inline-preview-loading">No preview available</div>');
+    card.innerHTML=`<div class="${thumbClass}">${previewMarkup}</div><div class="exercise-body"><div class="exercise-top"><div><h3>${escapeHtml(ex.name)}</h3><div class="meta">${escapeHtml([...(ex.equipment||[]),...(ex.body||[])].slice(0,4).join(' • '))}</div></div><span class="count">${exClips.length} clip${exClips.length===1?'':'s'}</span></div>${featured?`<div class="preview-stamp">Preview ${fmtTime(featured.previewStart??featured.start)}–${fmtTime(featured.previewEnd??featured.end)}</div>`:''}<div class="tag-row">${(ex.tags||[]).slice(0,6).map(t=>`<span class="tag">${escapeHtml(t)}</span>`).join('')}</div><div class="clip-list">${exClips.slice(0,4).map(c=>`<div class="clip-row"><span>${escapeHtml(c.name)} <span class="meta">${fmtTime(c.start)}–${fmtTime(c.end)}</span></span><button data-clip="${c.id}">Open preview</button></div>`).join('')}</div></div>`;
     card.querySelectorAll('[data-clip]').forEach(b=>b.onclick=()=>openPreview(b.dataset.clip));grid.appendChild(card);
+    if(featured&&src&&yt){const host=card.querySelector('[data-inline-preview]');previewJobs.push({host,clip:featured,src});}
+  });
+  setupInlinePreviews(previewJobs);
+}
+
+function teardownInlinePreviews(){
+  if(inlinePreviewObserver){try{inlinePreviewObserver.disconnect();}catch{}inlinePreviewObserver=null;}
+  for(const entry of inlinePreviewPlayers.values()){
+    if(entry.timer)clearInterval(entry.timer);
+    if(entry.player?.destroy){try{entry.player.destroy();}catch{}}
+  }
+  inlinePreviewPlayers.clear();
+}
+
+function setupInlinePreviews(jobs){
+  if(!jobs.length)return;
+  const mount=job=>mountInlinePreview(job.host,job.clip,job.src);
+  if('IntersectionObserver' in window){
+    const byHost=new Map(jobs.map(j=>[j.host,j]));
+    inlinePreviewObserver=new IntersectionObserver(entries=>{
+      entries.forEach(entry=>{
+        const job=byHost.get(entry.target);if(!job)return;
+        if(entry.isIntersecting)mount(job);
+        else unmountInlinePreview(entry.target);
+      });
+    },{rootMargin:'180px 0px',threshold:0.01});
+    jobs.forEach(j=>inlinePreviewObserver.observe(j.host));
+  }else jobs.slice(0,8).forEach(mount);
+}
+
+function unmountInlinePreview(host){
+  const key=host?.dataset?.inlinePreview;if(!key)return;
+  const entry=inlinePreviewPlayers.get(key);if(!entry)return;
+  if(entry.timer)clearInterval(entry.timer);
+  if(entry.player?.destroy){try{entry.player.destroy();}catch{}}
+  inlinePreviewPlayers.delete(key);
+  host.innerHTML='<div class="inline-preview-loading">Clip preview paused off-screen</div>';
+}
+
+function mountInlinePreview(host,clip,src){
+  if(!host||inlinePreviewPlayers.has(clip.id)||typeof YT==='undefined'||!YT.Player)return;
+  const yt=parseYouTube(src.url);if(!yt)return;
+  const start=Number(clip.previewStart??clip.start??0);
+  const end=Number(clip.previewEnd??clip.end??(start+6));
+  const loopLength=Math.max(0.5,end-start);
+  const rewindLead=Math.min(0.45,Math.max(0.18,loopLength*0.08));
+  const rewindAt=Math.max(start+0.25,end-rewindLead);
+  const playerNode=document.createElement('div');
+  playerNode.id='inline-player-'+clip.id.replace(/[^a-zA-Z0-9_-]/g,'');
+  host.innerHTML='';host.appendChild(playerNode);
+  const entry={player:null,timer:null};inlinePreviewPlayers.set(clip.id,entry);
+  entry.player=new YT.Player(playerNode.id,{
+    videoId:yt.id,
+    playerVars:{start:Math.floor(start),autoplay:1,mute:1,playsinline:1,controls:0,fs:0,disablekb:1,iv_load_policy:3,rel:0},
+    events:{
+      onReady:e=>{
+        const p=e.target;p.mute();p.seekTo(start,true);p.playVideo();
+        entry.timer=setInterval(()=>{try{const t=p.getCurrentTime();if(t>=rewindAt||t<start-0.5){p.seekTo(start,true);p.playVideo();}}catch{}},80);
+      },
+      onStateChange:e=>{
+        if(e.data===YT.PlayerState.ENDED||e.data===YT.PlayerState.PAUSED){
+          try{entry.player.seekTo(start,true);entry.player.playVideo();}catch{}
+        }
+      }
+    }
   });
 }
 

@@ -1,3 +1,7 @@
+## Current version: v2.3
+
+Clip-specific looping previews: exercise cards now cue and loop from each clip’s own saved preview range. Visible-card players are mounted only while near the viewport to reduce resource use.
+
 ## Current version: v2.2
 
 Adds a visible version badge at the top of the app and bumps the service-worker cache so deployed updates are easier to verify.
