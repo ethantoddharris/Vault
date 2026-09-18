@@ -7,8 +7,6 @@ let activeFilter='All';
 let ytPlayer=null;
 let loopTimer=null;
 let previewContext=null;
-const inlinePreviewPlayers=new Map();
-let inlinePreviewObserver=null;
 
 const $=s=>document.querySelector(s);
 const $$=s=>[...document.querySelectorAll(s)];
@@ -94,84 +92,20 @@ async function renderLibrary(){
   const chipWrap=$('#filterChips');chipWrap.innerHTML='';['All',...Array.from(tags).sort().slice(0,18)].forEach(t=>{const b=document.createElement('button');b.className='chip'+(activeFilter===t?' active':'');b.textContent=t;b.onclick=()=>{activeFilter=t;renderLibrary();};chipWrap.appendChild(b);});
   const filtered=exercises.filter(e=>{const hay=[e.name,...(e.aliases||[]),...(e.tags||[]),...(e.equipment||[]),...(e.body||[]),e.notes||''].join(' ').toLowerCase();const filterOk=activeFilter==='All'||[...(e.tags||[]),...(e.equipment||[]),...(e.body||[])].includes(activeFilter);return filterOk&&(!q||hay.includes(q));});
 
-  teardownInlinePreviews();
   const grid=$('#exerciseGrid');grid.innerHTML='';$('#libraryEmpty').classList.toggle('hidden',filtered.length>0);
-  const previewJobs=[];
   filtered.forEach(ex=>{
     const exClips=clips.filter(c=>c.exerciseId===ex.id);
-    const featured=exClips[0];const src=featured?sources.find(s=>s.id===featured.sourceId):null;const yt=src?parseYouTube(src.url):null;
+    const featured=exClips[0];
+    const src=featured?sources.find(s=>s.id===featured.sourceId):null;
+    const yt=src?parseYouTube(src.url):null;
     const card=document.createElement('article');card.className='exercise-card';
     const thumbClass=yt?.isShort?'thumb vertical':'thumb';
-    const previewMarkup=featured&&yt
-      ? `<div class="inline-preview" data-inline-preview="${featured.id}" aria-label="Looping preview for ${escapeHtml(ex.name)}"><div class="inline-preview-loading">Loading clip preview…</div></div>`
-      : (yt?`<img src="${ytThumb(yt.id)}" alt="${escapeHtml(ex.name)} source thumbnail">`: '<div class="inline-preview-loading">No preview available</div>');
-    card.innerHTML=`<div class="${thumbClass}">${previewMarkup}</div><div class="exercise-body"><div class="exercise-top"><div><h3>${escapeHtml(ex.name)}</h3><div class="meta">${escapeHtml([...(ex.equipment||[]),...(ex.body||[])].slice(0,4).join(' • '))}</div></div><span class="count">${exClips.length} clip${exClips.length===1?'':'s'}</span></div>${featured?`<div class="preview-stamp">Preview ${fmtTime(featured.previewStart??featured.start)}–${fmtTime(featured.previewEnd??featured.end)}</div>`:''}<div class="tag-row">${(ex.tags||[]).slice(0,6).map(t=>`<span class="tag">${escapeHtml(t)}</span>`).join('')}</div><div class="clip-list">${exClips.slice(0,4).map(c=>`<div class="clip-row"><span>${escapeHtml(c.name)} <span class="meta">${fmtTime(c.start)}–${fmtTime(c.end)}</span></span><button data-clip="${c.id}">Open preview</button></div>`).join('')}</div></div>`;
-    card.querySelectorAll('[data-clip]').forEach(b=>b.onclick=()=>openPreview(b.dataset.clip));grid.appendChild(card);
-    if(featured&&src&&yt){const host=card.querySelector('[data-inline-preview]');previewJobs.push({host,clip:featured,src});}
-  });
-  setupInlinePreviews(previewJobs);
-}
-
-function teardownInlinePreviews(){
-  if(inlinePreviewObserver){try{inlinePreviewObserver.disconnect();}catch{}inlinePreviewObserver=null;}
-  for(const entry of inlinePreviewPlayers.values()){
-    if(entry.timer)clearInterval(entry.timer);
-    if(entry.player?.destroy){try{entry.player.destroy();}catch{}}
-  }
-  inlinePreviewPlayers.clear();
-}
-
-function setupInlinePreviews(jobs){
-  if(!jobs.length)return;
-  const mount=job=>mountInlinePreview(job.host,job.clip,job.src);
-  if('IntersectionObserver' in window){
-    const byHost=new Map(jobs.map(j=>[j.host,j]));
-    inlinePreviewObserver=new IntersectionObserver(entries=>{
-      entries.forEach(entry=>{
-        const job=byHost.get(entry.target);if(!job)return;
-        if(entry.isIntersecting)mount(job);
-        else unmountInlinePreview(entry.target);
-      });
-    },{rootMargin:'180px 0px',threshold:0.01});
-    jobs.forEach(j=>inlinePreviewObserver.observe(j.host));
-  }else jobs.slice(0,8).forEach(mount);
-}
-
-function unmountInlinePreview(host){
-  const key=host?.dataset?.inlinePreview;if(!key)return;
-  const entry=inlinePreviewPlayers.get(key);if(!entry)return;
-  if(entry.timer)clearInterval(entry.timer);
-  if(entry.player?.destroy){try{entry.player.destroy();}catch{}}
-  inlinePreviewPlayers.delete(key);
-  host.innerHTML='<div class="inline-preview-loading">Clip preview paused off-screen</div>';
-}
-
-function mountInlinePreview(host,clip,src){
-  if(!host||inlinePreviewPlayers.has(clip.id)||typeof YT==='undefined'||!YT.Player)return;
-  const yt=parseYouTube(src.url);if(!yt)return;
-  const start=Number(clip.previewStart??clip.start??0);
-  const end=Number(clip.previewEnd??clip.end??(start+6));
-  const loopLength=Math.max(0.5,end-start);
-  const rewindLead=Math.min(0.45,Math.max(0.18,loopLength*0.08));
-  const rewindAt=Math.max(start+0.25,end-rewindLead);
-  const playerNode=document.createElement('div');
-  playerNode.id='inline-player-'+clip.id.replace(/[^a-zA-Z0-9_-]/g,'');
-  host.innerHTML='';host.appendChild(playerNode);
-  const entry={player:null,timer:null};inlinePreviewPlayers.set(clip.id,entry);
-  entry.player=new YT.Player(playerNode.id,{
-    videoId:yt.id,
-    playerVars:{start:Math.floor(start),autoplay:1,mute:1,playsinline:1,controls:0,fs:0,disablekb:1,iv_load_policy:3,rel:0},
-    events:{
-      onReady:e=>{
-        const p=e.target;p.mute();p.seekTo(start,true);p.playVideo();
-        entry.timer=setInterval(()=>{try{const t=p.getCurrentTime();if(t>=rewindAt||t<start-0.5){p.seekTo(start,true);p.playVideo();}}catch{}},80);
-      },
-      onStateChange:e=>{
-        if(e.data===YT.PlayerState.ENDED||e.data===YT.PlayerState.PAUSED){
-          try{entry.player.seekTo(start,true);entry.player.playVideo();}catch{}
-        }
-      }
-    }
+    const thumbMarkup=yt
+      ? `<img src="${ytThumb(yt.id)}" alt="Original YouTube thumbnail for ${escapeHtml(src?.title||ex.name)}">`
+      : '<div class="inline-preview-loading">No source thumbnail available</div>';
+    card.innerHTML=`<div class="${thumbClass}">${thumbMarkup}</div><div class="exercise-body"><div class="exercise-top"><div><h3>${escapeHtml(ex.name)}</h3><div class="meta">${escapeHtml([...(ex.equipment||[]),...(ex.body||[])].slice(0,4).join(' • '))}</div></div><span class="count">${exClips.length} clip${exClips.length===1?'':'s'}</span></div>${featured?`<div class="preview-stamp">Clip ${fmtTime(featured.start)}–${fmtTime(featured.end)}</div>`:''}<div class="tag-row">${(ex.tags||[]).slice(0,6).map(t=>`<span class="tag">${escapeHtml(t)}</span>`).join('')}</div><div class="clip-list">${exClips.slice(0,4).map(c=>`<div class="clip-row"><span>${escapeHtml(c.name)} <span class="meta">${fmtTime(c.start)}–${fmtTime(c.end)}</span></span><button data-clip="${c.id}">Preview</button></div>`).join('')}</div></div>`;
+    card.querySelectorAll('[data-clip]').forEach(b=>b.onclick=()=>openPreview(b.dataset.clip));
+    grid.appendChild(card);
   });
 }
 
@@ -210,10 +144,30 @@ async function openSourceDialog(sourceId=''){
   showDialog('sourceDialog');
 }
 
-function openClipDialog(sourceId,clipId=''){const f=$('#clipForm');f.reset();$('#clipSourceId').value=sourceId;$('#clipId').value=clipId;$('#clipDialogTitle').textContent=clipId?'Edit clip':'Add clip';if(clipId){get('clips',clipId).then(c=>{if(!c)return;$('#clipName').value=c.name||'';$('#clipAliases').value=(c.aliases||[]).join(', ');$('#clipStart').value=fmtTime(c.start);$('#clipEnd').value=fmtTime(c.end);$('#clipPreviewStart').value=c.previewStart!=null?fmtTime(c.previewStart):'';$('#clipPreviewEnd').value=c.previewEnd!=null?fmtTime(c.previewEnd):'';$('#clipTags').value=(c.tags||[]).join(', ');$('#clipEquipment').value=(c.equipment||[]).join(', ');$('#clipBody').value=(c.body||[]).join(', ');$('#clipGoal').value=(c.goal||[]).join(', ');$('#clipNotes').value=c.notes||'';});}showDialog('clipDialog');}
+function openClipDialog(sourceId,clipId=''){const f=$('#clipForm');f.reset();$('#clipSourceId').value=sourceId;$('#clipId').value=clipId;$('#clipDialogTitle').textContent=clipId?'Edit clip':'Add clip';if(clipId){get('clips',clipId).then(c=>{if(!c)return;$('#clipName').value=c.name||'';$('#clipAliases').value=(c.aliases||[]).join(', ');$('#clipStart').value=fmtTime(c.start);$('#clipEnd').value=fmtTime(c.end);$('#clipTags').value=(c.tags||[]).join(', ');$('#clipEquipment').value=(c.equipment||[]).join(', ');$('#clipBody').value=(c.body||[]).join(', ');$('#clipGoal').value=(c.goal||[]).join(', ');$('#clipNotes').value=c.notes||'';});}showDialog('clipDialog');}
 
-async function openPreview(clipId){const clip=await get('clips',clipId);if(!clip)return;const src=await get('sources',clip.sourceId);if(!src)return;previewContext={clip,src};$('#previewTitle').textContent=clip.name;$('#previewMeta').textContent=`${fmtTime(clip.previewStart??clip.start)}–${fmtTime(clip.previewEnd??clip.end)} • ${src.title}`;$('#openSourceBtn').onclick=()=>window.open(sourceOpenUrl(src,clip.start),'_blank','noopener');showDialog('previewDialog');startPreviewPlayer();}
-function stopPreview(){if(loopTimer){clearInterval(loopTimer);loopTimer=null;}if(ytPlayer?.destroy){try{ytPlayer.destroy();}catch{}}ytPlayer=null;$('#youtubePlayer').innerHTML='';}
+async function openPreview(clipId){
+  const clip=await get('clips',clipId);if(!clip)return;
+  const src=await get('sources',clip.sourceId);if(!src)return;
+  previewContext={clip,src};
+  $('#previewTitle').textContent=clip.name;
+  $('#previewMeta').textContent=`${fmtTime(clip.start)}–${fmtTime(clip.end)} • ${src.title}`;
+  $('#openSourceBtn').onclick=()=>window.open(sourceOpenUrl(src,clip.start),'_blank','noopener');
+  $('#replayClipBtn').onclick=()=>replayCurrentClip();
+  showDialog('previewDialog');
+  startPreviewPlayer();
+}
+function stopPreview(){
+  if(loopTimer){clearInterval(loopTimer);loopTimer=null;}
+  if(ytPlayer?.destroy){try{ytPlayer.destroy();}catch{}}
+  ytPlayer=null;
+  $('#youtubePlayer').innerHTML='';
+}
+function replayCurrentClip(){
+  const clip=previewContext?.clip;
+  if(!clip||!ytPlayer)return;
+  try{ytPlayer.seekTo(Number(clip.start||0),true);ytPlayer.playVideo();}catch{}
+}
 function startPreviewPlayer(){
   stopPreview();
   const {clip,src}=previewContext||{};
@@ -222,58 +176,37 @@ function startPreviewPlayer(){
   const fallback=$('#fallbackPlayer');
   fallback.classList.add('hidden');
   if(!yt||typeof YT==='undefined'||!YT.Player){
-    fallback.textContent='Inline looping is available for YouTube sources. Use “Open source” for this platform.';
+    fallback.textContent='Embedded clip preview is available for YouTube sources. Use “Open source” for this platform.';
     fallback.classList.remove('hidden');
     return;
   }
-  const start=Number(clip.previewStart??clip.start??0);
-  const end=Number(clip.previewEnd??clip.end??(start+6));
-  const loopLength=Math.max(0.5,end-start);
-  // Jump back *before* YouTube reaches the saved endpoint. Short exercise previews
-  // otherwise spend much of their life showing YouTube's paused/ended overlay.
-  // Use a slightly larger lead for very short clips so network/player latency
-  // cannot carry the player into the ended state before our next check.
-  const rewindLead=Math.min(0.45,Math.max(0.18,loopLength*0.08));
-  const rewindAt=Math.max(start+0.25,end-rewindLead);
-
+  const start=Number(clip.start||0);
+  const end=Number(clip.end||start+10);
   ytPlayer=new YT.Player('youtubePlayer',{
     videoId:yt.id,
     playerVars:{
       start:Math.floor(start),
       autoplay:1,
-      mute:1,
       playsinline:1,
-      controls:0,
-      fs:0,
-      disablekb:1,
+      controls:1,
+      fs:1,
       iv_load_policy:3,
       rel:0
     },
     events:{
       onReady:e=>{
         const p=e.target;
-        p.mute();
         p.seekTo(start,true);
         p.playVideo();
         loopTimer=setInterval(()=>{
           try{
             const t=p.getCurrentTime();
-            if(t>=rewindAt){
-              p.seekTo(start,true);
-              // seekTo normally preserves PLAYING, but explicitly resume to make
-              // the loop robust across browsers and brief buffering events.
-              p.playVideo();
+            if(t>=end){
+              clearInterval(loopTimer);loopTimer=null;
+              p.pauseVideo();
             }
           }catch{}
-        },80);
-      },
-      onStateChange:e=>{
-        // If YouTube ever manages to enter ENDED/PAUSED during an active preview,
-        // immediately resume from the preview start rather than leaving its overlay visible.
-        if(!previewContext||!ytPlayer)return;
-        if(e.data===YT.PlayerState.ENDED){
-          try{ytPlayer.seekTo(start,true);ytPlayer.playVideo();}catch{}
-        }
+        },120);
       }
     }
   });
@@ -292,17 +225,17 @@ function wireEvents(){
   $$('[data-close]').forEach(b=>b.onclick=()=>{const id=b.dataset.close;if(id==='previewDialog')stopPreview();closeDialog(id);});
   $('#previewDialog').addEventListener('close',stopPreview);
   $('#sourceForm').addEventListener('submit',async e=>{e.preventDefault();const url=$('#sourceUrl').value.trim();if(!url)return;const platform=$('#sourcePlatform').value;const title=$('#sourceTitle').value.trim()||'Untitled source';const sourceId=$('#sourceId').value;if(!sourceId&&$('#sourceToInbox').checked){await put('inbox',{id:uid(),url,title,platform,createdAt:Date.now()});}else{const yt=parseYouTube(url);const existing=sourceId?await get('sources',sourceId):null;await put('sources',{id:sourceId||uid(),url,title,creator:$('#sourceCreator').value.trim(),platform:yt?'YouTube':platform,createdAt:existing?.createdAt||Date.now(),updatedAt:Date.now()});}closeDialog('sourceDialog');await render();});
-  $('#clipForm').addEventListener('submit',async e=>{e.preventDefault();const start=parseTime($('#clipStart').value),end=parseTime($('#clipEnd').value);if(start===null||end===null||end<=start){alert('Please enter a valid clip start and an end time after the start.');return;}const id=$('#clipId').value||uid();const previous=$('#clipId').value?await get('clips',id):null;const oldExerciseId=previous?.exerciseId;const clip={id,sourceId:$('#clipSourceId').value,name:$('#clipName').value.trim(),aliases:normalizeList($('#clipAliases').value),start,end,previewStart:parseTime($('#clipPreviewStart').value),previewEnd:parseTime($('#clipPreviewEnd').value),tags:normalizeList($('#clipTags').value),equipment:normalizeList($('#clipEquipment').value),body:normalizeList($('#clipBody').value),goal:normalizeList($('#clipGoal').value),notes:$('#clipNotes').value.trim(),createdAt:previous?.createdAt||Date.now(),updatedAt:Date.now()};if(clip.previewStart===null)clip.previewStart=start;if(clip.previewEnd===null)clip.previewEnd=Math.min(end,start+7);if(clip.previewEnd<=clip.previewStart){clip.previewStart=start;clip.previewEnd=Math.min(end,start+7);}await put('clips',clip);await ensureExerciseFromClip(clip);if(oldExerciseId&&oldExerciseId!==clip.exerciseId)await pruneExerciseIfOrphaned(oldExerciseId);closeDialog('clipDialog');await render();});
+  $('#clipForm').addEventListener('submit',async e=>{e.preventDefault();const start=parseTime($('#clipStart').value),end=parseTime($('#clipEnd').value);if(start===null||end===null||end<=start){alert('Please enter a valid clip start and an end time after the start.');return;}const id=$('#clipId').value||uid();const previous=$('#clipId').value?await get('clips',id):null;const oldExerciseId=previous?.exerciseId;const clip={id,sourceId:$('#clipSourceId').value,name:$('#clipName').value.trim(),aliases:normalizeList($('#clipAliases').value),start,end,tags:normalizeList($('#clipTags').value),equipment:normalizeList($('#clipEquipment').value),body:normalizeList($('#clipBody').value),goal:normalizeList($('#clipGoal').value),notes:$('#clipNotes').value.trim(),createdAt:previous?.createdAt||Date.now(),updatedAt:Date.now()};await put('clips',clip);await ensureExerciseFromClip(clip);if(oldExerciseId&&oldExerciseId!==clip.exerciseId)await pruneExerciseIfOrphaned(oldExerciseId);closeDialog('clipDialog');await render();});
   $('#exerciseForm').addEventListener('submit',async e=>{e.preventDefault();await put('exercises',{id:uid(),name:$('#exerciseName').value.trim(),aliases:normalizeList($('#exerciseAliases').value),equipment:normalizeList($('#exerciseEquipment').value),body:normalizeList($('#exerciseBody').value),tags:normalizeList($('#exerciseTags').value),notes:$('#exerciseNotes').value.trim(),createdAt:Date.now()});closeDialog('exerciseDialog');await render();});
   $('#saveWorkoutBtn').onclick=async()=>{const ids=$$('#builderExerciseList input:checked').map(x=>x.value);await put('workouts',{id:uid(),name:$('#workoutNameInput').value.trim()||'Untitled workout',format:$('#workoutFormatInput').value,notes:$('#workoutNotesInput').value.trim(),exerciseIds:ids,createdAt:Date.now()});$('#builderExerciseList').querySelectorAll('input').forEach(x=>x.checked=false);await renderWorkouts();};
   $('#exportBtn').onclick=exportBackup;$('#importBtn').onclick=()=>$('#backupFile').click();$('#backupFile').onchange=async e=>{if(!e.target.files[0])return;try{await importBackup(e.target.files[0]);}catch(err){alert('Could not import that backup: '+err.message);}e.target.value='';};
 }
 
-async function seedIfEmpty(){const sources=await all('sources');if(sources.length)return;const s={id:uid(),url:'https://www.youtube.com/watch?v=dQw4w9WgXcQ',title:'Example source — replace me',creator:'Demo',platform:'YouTube',createdAt:Date.now()};await put('sources',s);const c={id:uid(),sourceId:s.id,name:'Renegade Row',aliases:['plank row'],start:12,end:28,previewStart:14,previewEnd:20,tags:['core','back','anti-rotation'],equipment:['dumbbells'],body:['core','back'],goal:['strength'],notes:'Example clip so you can see the real data structure.',createdAt:Date.now()};await put('clips',c);await ensureExerciseFromClip(c);}
+async function seedIfEmpty(){const sources=await all('sources');if(sources.length)return;const s={id:uid(),url:'https://www.youtube.com/watch?v=dQw4w9WgXcQ',title:'Example source — replace me',creator:'Demo',platform:'YouTube',createdAt:Date.now()};await put('sources',s);const c={id:uid(),sourceId:s.id,name:'Renegade Row',aliases:['plank row'],start:12,end:28,tags:['core','back','anti-rotation'],equipment:['dumbbells'],body:['core','back'],goal:['strength'],notes:'Example clip so you can see the real data structure.',createdAt:Date.now()};await put('clips',c);await ensureExerciseFromClip(c);}
 
 async function registerFreshServiceWorker(){
   if(!('serviceWorker' in navigator))return;
-  const build=String(window.EXERCISE_VAULT_BUILD||'2.4');
+  const build=String(window.EXERCISE_VAULT_BUILD||'2.5');
   try{
     // A versioned worker URL + updateViaCache:none prevents the browser from
     // reusing an older sw.js while we iterate quickly on GitHub Pages.

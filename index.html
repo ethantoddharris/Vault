@@ -4,16 +4,16 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#0f172a" />
-  <title>Exercise Vault v2.4</title>
-  <link rel="manifest" href="manifest.webmanifest?v=2.4" />
-  <link rel="stylesheet" href="styles.css?v=2.4" />
+  <title>Exercise Vault v2.5</title>
+  <link rel="manifest" href="manifest.webmanifest?v=2.5" />
+  <link rel="stylesheet" href="styles.css?v=2.5" />
 </head>
 <body>
   <div id="app" class="app-shell">
     <header class="topbar">
       <div>
         <div class="eyebrow">Personal movement library</div>
-        <div style="display:flex;align-items:center;gap:.65rem;flex-wrap:wrap"><h1 style="margin:0">Exercise Vault</h1><span aria-label="App version 2.4" style="display:inline-flex;align-items:center;border:1px solid rgba(148,163,184,.45);border-radius:999px;padding:.18rem .55rem;font-size:.78rem;font-weight:700;letter-spacing:.02em;background:rgba(148,163,184,.12)">v2.4</span></div>
+        <div style="display:flex;align-items:center;gap:.65rem;flex-wrap:wrap"><h1 style="margin:0">Exercise Vault</h1><span aria-label="App version 2.4" style="display:inline-flex;align-items:center;border:1px solid rgba(148,163,184,.45);border-radius:999px;padding:.18rem .55rem;font-size:.78rem;font-weight:700;letter-spacing:.02em;background:rgba(148,163,184,.12)">v2.5</span></div>
       </div>
       <div class="top-actions">
         <button id="importBtn" class="btn secondary">Import backup</button>
@@ -112,11 +112,9 @@
         <label>Exercise / clip name<input id="clipName" required placeholder="Renegade Row" /></label>
         <label>Aliases<input id="clipAliases" placeholder="plank row, dumbbell plank row" /></label>
       </div>
-      <div class="four-col">
-        <label>Start<input id="clipStart" placeholder="3:12" required /></label>
-        <label>End<input id="clipEnd" placeholder="3:48" required /></label>
-        <label>Preview start<input id="clipPreviewStart" placeholder="3:20" /></label>
-        <label>Preview end<input id="clipPreviewEnd" placeholder="3:27" /></label>
+      <div class="two-col">
+        <label>Clip start<input id="clipStart" placeholder="3:12" required /></label>
+        <label>Clip end<input id="clipEnd" placeholder="3:48" required /></label>
       </div>
       <div class="two-col">
         <label>Tags<input id="clipTags" placeholder="dumbbells, core, back, anti-rotation" /></label>
@@ -145,16 +143,16 @@
 
   <dialog id="previewDialog">
     <div class="dialog-card wide">
-      <div class="dialog-head"><div><div class="eyebrow">Loop preview</div><h3 id="previewTitle">Preview</h3></div><button type="button" class="icon-btn" data-close="previewDialog">×</button></div>
+      <div class="dialog-head"><div><div class="eyebrow">Clip preview</div><h3 id="previewTitle">Preview</h3></div><button type="button" class="icon-btn" data-close="previewDialog">×</button></div>
       <div id="playerWrap" class="player-wrap"><div id="youtubePlayer"></div><div id="fallbackPlayer" class="fallback hidden"></div></div>
       <div id="previewMeta" class="preview-meta"></div>
-      <div class="dialog-actions"><button id="openSourceBtn" type="button" class="btn secondary">Open source</button><button type="button" class="btn primary" data-close="previewDialog">Done</button></div>
+      <div class="dialog-actions"><button id="replayClipBtn" type="button" class="btn secondary">Replay clip</button><button id="openSourceBtn" type="button" class="btn secondary">Open source</button><button type="button" class="btn primary" data-close="previewDialog">Done</button></div>
     </div>
   </dialog>
 
   <input id="backupFile" type="file" accept="application/json" hidden />
   <script src="https://www.youtube.com/iframe_api"></script>
-  <script>window.EXERCISE_VAULT_BUILD="2.4";</script>
-  <script src="app.js?v=2.4"></script>
+  <script>window.EXERCISE_VAULT_BUILD="2.5";</script>
+  <script src="app.js?v=2.5"></script>
 </body>
 </html>

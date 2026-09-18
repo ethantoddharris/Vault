@@ -1,4 +1,4 @@
-# Current version: v2.4
+# Current version: v2.5
 
 ### Update reliability patch
 
@@ -65,3 +65,11 @@ Upload the contents of this folder to a GitHub repository and enable GitHub Page
 
 ## V2.1 preview-loop update
 YouTube exercise previews now rewind slightly before the saved preview endpoint, check more frequently, and immediately resume if the player reaches an ended state. This reduces the center play/pause overlay on very short looping clips. Standard YouTube UI can still briefly appear during initial load or buffering.
+
+
+## v2.5
+- Restored original YouTube source thumbnails on library cards.
+- Removed live autoplaying card previews.
+- Simplified clip indexing to Clip Start + Clip End only.
+- Preview dialog plays one clip once and includes a Replay Clip button.
+- Existing old previewStart/previewEnd fields are ignored; no library reset is required.
