@@ -1,3 +1,7 @@
+## Current version: v2.2
+
+Adds a visible version badge at the top of the app and bumps the service-worker cache so deployed updates are easier to verify.
+
 # Exercise Vault V1
 
 A browser-based personal exercise/video indexing app.
