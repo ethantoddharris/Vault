@@ -1,6 +1,6 @@
-const BUILD='2.5';
+const BUILD='2.6';
 const CACHE=`exercise-vault-${BUILD}`;
-const APP_SHELL=['./','./index.html','./styles.css?v=2.5','./app.js?v=2.5','./manifest.webmanifest?v=2.5'];
+const APP_SHELL=['./','./index.html','./styles.css?v=2.6','./app.js?v=2.6','./manifest.webmanifest?v=2.6'];
 
 self.addEventListener('install',event=>{
   self.skipWaiting();

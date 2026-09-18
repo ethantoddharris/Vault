@@ -153,7 +153,6 @@ async function openPreview(clipId){
   $('#previewTitle').textContent=clip.name;
   $('#previewMeta').textContent=`${fmtTime(clip.start)}–${fmtTime(clip.end)} • ${src.title}`;
   $('#openSourceBtn').onclick=()=>window.open(sourceOpenUrl(src,clip.start),'_blank','noopener');
-  $('#replayClipBtn').onclick=()=>replayCurrentClip();
   showDialog('previewDialog');
   startPreviewPlayer();
 }
@@ -162,11 +161,6 @@ function stopPreview(){
   if(ytPlayer?.destroy){try{ytPlayer.destroy();}catch{}}
   ytPlayer=null;
   $('#youtubePlayer').innerHTML='';
-}
-function replayCurrentClip(){
-  const clip=previewContext?.clip;
-  if(!clip||!ytPlayer)return;
-  try{ytPlayer.seekTo(Number(clip.start||0),true);ytPlayer.playVideo();}catch{}
 }
 function startPreviewPlayer(){
   stopPreview();
@@ -182,31 +176,51 @@ function startPreviewPlayer(){
   }
   const start=Number(clip.start||0);
   const end=Number(clip.end||start+10);
+  const loopLength=Math.max(0.5,end-start);
+  // Rewind before the saved endpoint so YouTube never intentionally reaches
+  // its ENDED state. Most importantly, do NOT call playVideo() after every
+  // seek: YouTube documents that seekTo() preserves PLAYING when called while
+  // already playing. This reduces player-state UI flashes during short loops.
+  const rewindLead=Math.min(0.65,Math.max(0.28,loopLength*0.10));
+  const rewindAt=Math.max(start+0.35,end-rewindLead);
+
   ytPlayer=new YT.Player('youtubePlayer',{
     videoId:yt.id,
     playerVars:{
       start:Math.floor(start),
       autoplay:1,
+      mute:1,
       playsinline:1,
-      controls:1,
-      fs:1,
+      controls:0,
+      fs:0,
+      disablekb:1,
       iv_load_policy:3,
       rel:0
     },
     events:{
       onReady:e=>{
         const p=e.target;
+        p.mute();
         p.seekTo(start,true);
         p.playVideo();
         loopTimer=setInterval(()=>{
           try{
+            const state=p.getPlayerState();
             const t=p.getCurrentTime();
-            if(t>=end){
-              clearInterval(loopTimer);loopTimer=null;
-              p.pauseVideo();
+            if(state===YT.PlayerState.PLAYING && t>=rewindAt){
+              // Seek only. Calling playVideo() here is unnecessary and can
+              // cause YouTube to flash its center playback-state indicator.
+              p.seekTo(start,true);
             }
           }catch{}
-        },120);
+        },70);
+      },
+      onStateChange:e=>{
+        // Recovery only. Normal loops should never reach ENDED.
+        if(!previewContext||!ytPlayer)return;
+        if(e.data===YT.PlayerState.ENDED){
+          try{ytPlayer.seekTo(start,true);ytPlayer.playVideo();}catch{}
+        }
       }
     }
   });
