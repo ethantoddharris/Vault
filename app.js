@@ -142,7 +142,70 @@ function openClipDialog(sourceId,clipId=''){const f=$('#clipForm');f.reset();$('
 
 async function openPreview(clipId){const clip=await get('clips',clipId);if(!clip)return;const src=await get('sources',clip.sourceId);if(!src)return;previewContext={clip,src};$('#previewTitle').textContent=clip.name;$('#previewMeta').textContent=`${fmtTime(clip.previewStart??clip.start)}–${fmtTime(clip.previewEnd??clip.end)} • ${src.title}`;$('#openSourceBtn').onclick=()=>window.open(sourceOpenUrl(src,clip.start),'_blank','noopener');showDialog('previewDialog');startPreviewPlayer();}
 function stopPreview(){if(loopTimer){clearInterval(loopTimer);loopTimer=null;}if(ytPlayer?.destroy){try{ytPlayer.destroy();}catch{}}ytPlayer=null;$('#youtubePlayer').innerHTML='';}
-function startPreviewPlayer(){stopPreview();const {clip,src}=previewContext||{};if(!clip||!src)return;const yt=parseYouTube(src.url);const fallback=$('#fallbackPlayer');fallback.classList.add('hidden');if(!yt||typeof YT==='undefined'||!YT.Player){fallback.textContent='Inline looping is available for YouTube sources. Use “Open source” for this platform.';fallback.classList.remove('hidden');return;}const start=clip.previewStart??clip.start,end=clip.previewEnd??clip.end;ytPlayer=new YT.Player('youtubePlayer',{videoId:yt.id,playerVars:{start:Math.floor(start||0),autoplay:1,mute:1,playsinline:1,rel:0},events:{onReady:e=>{e.target.mute();e.target.seekTo(start||0,true);e.target.playVideo();loopTimer=setInterval(()=>{try{const t=e.target.getCurrentTime();if(end!=null&&t>=end)e.target.seekTo(start||0,true);}catch{}},250);}}});}
+function startPreviewPlayer(){
+  stopPreview();
+  const {clip,src}=previewContext||{};
+  if(!clip||!src)return;
+  const yt=parseYouTube(src.url);
+  const fallback=$('#fallbackPlayer');
+  fallback.classList.add('hidden');
+  if(!yt||typeof YT==='undefined'||!YT.Player){
+    fallback.textContent='Inline looping is available for YouTube sources. Use “Open source” for this platform.';
+    fallback.classList.remove('hidden');
+    return;
+  }
+  const start=Number(clip.previewStart??clip.start??0);
+  const end=Number(clip.previewEnd??clip.end??(start+6));
+  const loopLength=Math.max(0.5,end-start);
+  // Jump back *before* YouTube reaches the saved endpoint. Short exercise previews
+  // otherwise spend much of their life showing YouTube's paused/ended overlay.
+  // Use a slightly larger lead for very short clips so network/player latency
+  // cannot carry the player into the ended state before our next check.
+  const rewindLead=Math.min(0.45,Math.max(0.18,loopLength*0.08));
+  const rewindAt=Math.max(start+0.25,end-rewindLead);
+
+  ytPlayer=new YT.Player('youtubePlayer',{
+    videoId:yt.id,
+    playerVars:{
+      start:Math.floor(start),
+      autoplay:1,
+      mute:1,
+      playsinline:1,
+      controls:0,
+      fs:0,
+      disablekb:1,
+      iv_load_policy:3,
+      rel:0
+    },
+    events:{
+      onReady:e=>{
+        const p=e.target;
+        p.mute();
+        p.seekTo(start,true);
+        p.playVideo();
+        loopTimer=setInterval(()=>{
+          try{
+            const t=p.getCurrentTime();
+            if(t>=rewindAt){
+              p.seekTo(start,true);
+              // seekTo normally preserves PLAYING, but explicitly resume to make
+              // the loop robust across browsers and brief buffering events.
+              p.playVideo();
+            }
+          }catch{}
+        },80);
+      },
+      onStateChange:e=>{
+        // If YouTube ever manages to enter ENDED/PAUSED during an active preview,
+        // immediately resume from the preview start rather than leaving its overlay visible.
+        if(!previewContext||!ytPlayer)return;
+        if(e.data===YT.PlayerState.ENDED){
+          try{ytPlayer.seekTo(start,true);ytPlayer.playVideo();}catch{}
+        }
+      }
+    }
+  });
+}
 
 function escapeHtml(v){return String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));}
 

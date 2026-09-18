@@ -38,3 +38,7 @@ Upload the contents of this folder to a GitHub repository and enable GitHub Page
 6. Android/PWA share-target capture.
 7. Transcript indexing / semantic search.
 8. Rich workout player/timers.
+
+
+## V2.1 preview-loop update
+YouTube exercise previews now rewind slightly before the saved preview endpoint, check more frequently, and immediately resume if the player reaches an ended state. This reduces the center play/pause overlay on very short looping clips. Standard YouTube UI can still briefly appear during initial load or buffering.
