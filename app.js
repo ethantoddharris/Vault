@@ -300,4 +300,29 @@ function wireEvents(){
 
 async function seedIfEmpty(){const sources=await all('sources');if(sources.length)return;const s={id:uid(),url:'https://www.youtube.com/watch?v=dQw4w9WgXcQ',title:'Example source — replace me',creator:'Demo',platform:'YouTube',createdAt:Date.now()};await put('sources',s);const c={id:uid(),sourceId:s.id,name:'Renegade Row',aliases:['plank row'],start:12,end:28,previewStart:14,previewEnd:20,tags:['core','back','anti-rotation'],equipment:['dumbbells'],body:['core','back'],goal:['strength'],notes:'Example clip so you can see the real data structure.',createdAt:Date.now()};await put('clips',c);await ensureExerciseFromClip(c);}
 
-(async()=>{db=await openDB();wireEvents();await seedIfEmpty();await render();if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js').catch(()=>{});}})();
+async function registerFreshServiceWorker(){
+  if(!('serviceWorker' in navigator))return;
+  const build=String(window.EXERCISE_VAULT_BUILD||'2.4');
+  try{
+    // A versioned worker URL + updateViaCache:none prevents the browser from
+    // reusing an older sw.js while we iterate quickly on GitHub Pages.
+    const reg=await navigator.serviceWorker.register(`sw.js?build=${encodeURIComponent(build)}`,{
+      scope:'./',
+      updateViaCache:'none'
+    });
+
+    // Ask the browser to check now rather than waiting for its normal update cycle.
+    try{await reg.update();}catch{}
+
+    // If a new worker takes control, reload once so index/app/styles are all from
+    // the same build. sessionStorage prevents a controller-change reload loop.
+    navigator.serviceWorker.addEventListener('controllerchange',()=>{
+      const key=`vault-sw-reloaded-${build}`;
+      if(sessionStorage.getItem(key))return;
+      sessionStorage.setItem(key,'1');
+      location.reload();
+    });
+  }catch(err){console.warn('Service worker registration failed',err);}
+}
+
+(async()=>{db=await openDB();wireEvents();await seedIfEmpty();await render();await registerFreshServiceWorker();})();

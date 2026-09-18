@@ -1,3 +1,18 @@
+# Current version: v2.4
+
+### Update reliability patch
+
+This build is designed for rapid GitHub Pages iteration:
+
+- versioned `app.js`, `styles.css`, manifest, and service-worker URLs
+- service-worker registration uses `updateViaCache: none`
+- the app explicitly checks for a new service worker on load
+- a newly activated worker reloads the page once so all shell files match
+- app requests are network-first with `cache: no-store`; cache is only an offline fallback
+- old Exercise Vault caches are deleted automatically
+
+Your IndexedDB library is not cleared by these updates.
+
 ## Current version: v2.3
 
 Clip-specific looping previews: exercise cards now cue and loop from each clip’s own saved preview range. Visible-card players are mounted only while near the viewport to reduce resource use.
